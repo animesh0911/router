@@ -88,7 +88,7 @@ async fn test_rhai_hot_reload_works() {
         // We should see 1. and 2. versions of the expected logs
         for i in 1..3 {
             let expected = format!("{}. {}", i, expected_log);
-            assert!(logs.contains(&expected));
+            assert!(logs.contains(&expected), "expected log line: '{expected}'");
         }
     }
     std::fs::remove_file(&test_reload).expect("could not remove rhai test file");
