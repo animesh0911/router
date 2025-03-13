@@ -513,11 +513,9 @@ commands:
             # TODO: remove this workaround once we update to Xcode >= 15.1.0
             # See: https://github.com/apollographql/router/pull/5462
             RUST_LIB_BACKTRACE: 0
-          # command: xtask test --workspace --locked --features ci,snapshot
           command: |
-            for i in $(seq 0 50); do
-              echo "attempt $i"
-              if ! cargo test -p apollo-router --test integration_tests rhai; then
+            for i in $(seq 0 5); do
+              if ! xtask test --workspace --locked --features ci,snapshot; then
                 exit 1
               fi
             done
