@@ -72,6 +72,11 @@ async fn test_rhai_hot_reload_works() {
 
     let logs = receiver.await.expect("logs received");
 
+    println!("all logs");
+    println!("===============");
+    println!("{logs}");
+    println!("===============");
+
     for expected_log in [
         "router_service setup",
         "from_router_request",
