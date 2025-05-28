@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 // NOTE: There are several (technically) unused fields, type aliases, and methods in this module.
-// Unfortunely, there is not a good way to clean this up because of how `` it is used for testing.
+// Unfortunately, there is not a good way to clean this up because of how `` it is used for testing.
 // Rather than littering this module with `#[allow(dead_code)]`s or adding a config_atr to the
 // crate wide directive, allowing dead code here seems like the best options
 
 use std::sync::Arc;
+use std::fmt;
 
 use apollo_compiler::Name;
 use apollo_compiler::Node;
@@ -43,6 +44,8 @@ use crate::schema::position::ScalarTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::position::UnionTypeDefinitionPosition;
 use crate::supergraph::ValidFederationSubgraph;
+use crate::subgraph::test_utils::BuildOption;
+use crate::subgraph::test_utils::build_inner_expanded;
 
 //////////////////////////////////////////////////////////////////////////////
 // Field and Argument Specifications
@@ -116,7 +119,7 @@ impl From<FieldSpecification> for FieldDefinition {
 //////////////////////////////////////////////////////////////////////////////
 // Type Specifications
 
-pub(crate) trait TypeAndDirectiveSpecification {
+pub(crate) trait TypeAndDirectiveSpecification: fmt::Display {
     /// Returns the spec name (not the name in the schema).
     fn name(&self) -> &Name;
 
@@ -179,6 +182,12 @@ impl TypeAndDirectiveSpecification for ScalarTypeSpecification {
     }
 }
 
+impl fmt::Display for ScalarTypeSpecification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 pub(crate) struct ObjectTypeSpecification {
     pub(crate) name: Name,
     pub(crate) fields: fn(&FederationSchema) -> Vec<FieldSpecification>,
@@ -233,6 +242,12 @@ impl TypeAndDirectiveSpecification for ObjectTypeSpecification {
                 fields: field_map,
             }),
         )
+    }
+}
+
+impl fmt::Display for ObjectTypeSpecification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
@@ -313,6 +328,12 @@ impl TypeAndDirectiveSpecification for UnionTypeSpecification {
                 members,
             }),
         )
+    }
+}
+
+impl fmt::Display for UnionTypeSpecification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
@@ -406,6 +427,12 @@ impl TypeAndDirectiveSpecification for EnumTypeSpecification {
     }
 }
 
+impl fmt::Display for EnumTypeSpecification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 pub(crate) struct InputObjectTypeSpecification {
     pub(crate) name: Name,
     pub(crate) fields: fn(&FederationSchema) -> Vec<ArgumentSpecification>,
@@ -477,6 +504,12 @@ impl TypeAndDirectiveSpecification for InputObjectTypeSpecification {
                 fields: field_map,
             }),
         )
+    }
+}
+
+impl fmt::Display for InputObjectTypeSpecification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
@@ -572,6 +605,46 @@ impl DirectiveSpecification {
             repeatable,
             locations: locations.to_vec(),
         }
+    }
+
+    pub(crate) fn directive_spec_to_string(&self, schema: &FederationSchema) -> Result<String, FederationError> {
+        // Write the directive name
+        let mut result = String::new();
+        result.push_str(&format!("@{}", self.name));
+        
+        // Write arguments if any
+        if !self.args.is_empty() {
+            result.push_str("(");
+            for (i, arg) in self.args.iter().enumerate() {
+                if i > 0 {
+                    result.push_str(", ");
+                }
+                result.push_str(&arg.base_spec.name.to_string());
+
+                result.push_str(&format!(": {}", (arg.base_spec.get_type)(&schema, None)?));
+
+                if let Some(default) = &arg.base_spec.default_value {
+                    result.push_str(&format!(" = {}", default));
+                }
+            }
+            result.push_str(")");
+        }
+
+        // Write repeatable if true
+        if self.repeatable {
+            result.push_str(" repeatable");
+        }
+
+        // Write locations
+        result.push_str(" on ");
+        for (i, location) in self.locations.iter().enumerate() {
+            if i > 0 {
+                result.push_str(" | ");
+            }
+            result.push_str(&location.to_string());
+        }
+
+        Ok(result)
     }
 }
 
@@ -678,6 +751,53 @@ impl TypeAndDirectiveSpecification for DirectiveSpecification {
                 locations: self.locations.clone(),
             }),
         )
+    }
+}
+
+impl fmt::Display for DirectiveSpecification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Write the directive name
+        write!(f, "@{}", self.name)?;
+        
+        // Write arguments if any
+        if !self.args.is_empty() {
+            write!(f, "(")?;
+            for (i, arg) in self.args.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", arg.base_spec.name)?;
+
+                // Build minimal schema for getting the argument type names
+                let schema = build_inner_expanded("type Query { hello: String }", BuildOption::AsFed2)
+                    .unwrap()
+                    .schema()
+                    .to_owned();
+
+                write!(f, ": {}", (arg.base_spec.get_type)(&schema, None).unwrap())?;
+
+                if let Some(default) = &arg.base_spec.default_value {
+                    write!(f, " = {}", default)?;
+                }
+            }
+            write!(f, ")")?;
+        }
+
+        // Write repeatable if true
+        if self.repeatable {
+            write!(f, " repeatable")?;
+        }
+
+        // Write locations
+        write!(f, " on ")?;
+        for (i, location) in self.locations.iter().enumerate() {
+            if i > 0 {
+                write!(f, " | ")?;
+            }
+            write!(f, "{}", location)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -967,16 +1087,18 @@ fn ensure_same_directive_structure(
     }
     MultipleFederationErrors::from_iter(arg_errors).into_result()
 }
-
 #[cfg(test)]
 mod tests {
     use apollo_compiler::ast::DirectiveLocation;
     use apollo_compiler::ast::Type;
     use apollo_compiler::name;
+    use apollo_compiler::Schema;
 
     use super::ArgumentSpecification;
     use super::DirectiveArgumentSpecification;
+    use crate::error::FederationError;
     use crate::link::link_spec_definition::LINK_VERSIONS;
+    use crate::link::requires_scopes_spec_definition::RequiresScopesSpecDefinition;
     use crate::link::spec::Version;
     use crate::link::spec_definition::SpecDefinition;
     use crate::schema::FederationSchema;
@@ -1066,4 +1188,18 @@ mod tests {
             None,
         );
     }
+
+    // fn field_set_type(schema: &FederationSchema) -> Result<Type, FederationError> {
+    //     schema
+    //         .field_set_type()
+    //         .map(|pos| Type::non_null(Type::Named(pos.type_name)))
+    // }
+    
+    // #[test]
+    // fn test_display_directive_specification_definition() {
+    //     let key_spec = federation_spec_definition::key_directive_specification();
+    //     let key_spec_string = key_spec.directive_spec_to_string(&FederationSchema::new(Schema::new())).unwrap();
+
+    //     assert_eq!(key_spec_string, "@key(fields: FieldSet!) repeatable on OBJECT | INTERFACE");
+    // }   
 }

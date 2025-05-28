@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 use std::sync::LazyLock;
 
@@ -13,7 +14,10 @@ use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::UnionType;
 use apollo_compiler::schema::Value;
 use apollo_compiler::ty;
+use apollo_compiler::Schema;
+use itertools::Itertools;
 
+use crate::subgraph::typestate::Subgraph;
 use crate::ContextSpecDefinition;
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
@@ -108,6 +112,27 @@ impl FederationSpecDefinition {
                 version,
             },
         }
+    }
+
+    pub(crate) fn federation_spec_to_string(&self) -> Result<String, FederationError> {
+        let subgraph = Subgraph::parse("S", "http://S", "type Query { hello: String }")?.into_fed2_subgraph()?.expand_links()?;
+        let mut result = String::new();
+        let directive_definitions = self.directive_specs();
+        for defn in directive_definitions {
+            if let Some(defn) = subgraph.schema().schema().directive_definitions.get(defn.name()) {
+                result.push_str(&defn.to_string());
+                result.push_str("\n");
+            }
+        }
+
+        let type_definitions = self.type_specs();
+        for defn in type_definitions {
+            if let Some(defn) = subgraph.schema().schema().types.get(defn.name()) {
+                result.push_str(&defn.to_string());
+                result.push_str("\n");
+            }
+        }
+        Ok(result)
     }
 
     // PORT_NOTE: a port of `federationSpec` from JS
@@ -651,7 +676,7 @@ impl FederationSpecDefinition {
         })
     }
 
-    fn key_directive_specification() -> DirectiveSpecification {
+    pub(crate) fn key_directive_specification() -> DirectiveSpecification {
         DirectiveSpecification::new(
             FEDERATION_KEY_DIRECTIVE_NAME_IN_SPEC,
             &[
@@ -1018,6 +1043,29 @@ pub(crate) fn get_federation_spec_definition_from_subgraph(
     }
 }
 
+#[allow(dead_code)]
+pub(crate) fn get_federation_spec_definition_string_from_version(version: Version) -> Result<String, FederationError> {
+    let fed_spec_definition = FEDERATION_VERSIONS
+    .find(&version)
+    .ok_or_else(|| internal_error!("Unknown Federation spec version: {version}"))?;
+    
+    fed_spec_definition.federation_spec_to_string()
+}
+
+impl fmt::Display for FederationSpecDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let directive_specs = self.directive_specs();
+        let type_specs = self.type_specs();
+        for spec in directive_specs {
+            write!(f, "{}", spec)?;
+        }
+        for spec in type_specs {
+            write!(f, "{}", spec)?;
+        }
+        Ok(())
+    }
+}
+
 /// Creates a fake imports for fed 1 link directive.
 /// - Fed 1 does not support `import` argument, but we use it to simulate fed 1 behavior.
 // PORT_NOTE: From `FAKE_FED1_CORE_FEATURE_TO_RENAME_TYPES` in JS
@@ -1044,4 +1092,49 @@ pub(crate) fn fed1_link_imports() -> Vec<Arc<link::Import>> {
         .chain(directive_imports)
         .map(Arc::new)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::link::federation_spec_definition::get_federation_spec_definition_string_from_version;
+    use crate::link::spec::Version;
+
+    #[test]
+    fn test_display_federation_spec_definition() {
+
+        // fed 2.9
+        let fed2_9_spec = get_federation_spec_definition_string_from_version(Version { major: 2, minor: 9 });
+        // assert_eq!(fed2_9_spec.unwrap(), "ACTUAL_FED2_9_SPEC");
+        insta::assert_snapshot!((fed2_9_spec.unwrap()), @"directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+directive @requires(fields: FieldSet!) on FIELD_DEFINITION
+directive @provides(fields: FieldSet!) on FIELD_DEFINITION
+directive @external on OBJECT | FIELD_DEFINITION
+directive @extends on OBJECT | INTERFACE
+directive @inaccessible on
+    | FIELD_DEFINITION
+    | OBJECT
+    | INTERFACE
+    | UNION
+    | ENUM
+    | ENUM_VALUE
+    | SCALAR
+    | INPUT_OBJECT
+    | INPUT_FIELD_DEFINITION
+    | ARGUMENT_DEFINITION
+directive @tag(name: String!) repeatable on
+    | FIELD_DEFINITION
+    | INTERFACE
+    | OBJECT
+    | UNION
+    | ARGUMENT_DEFINITION
+    | SCALAR
+    | ENUM
+    | ENUM_VALUE
+    | INPUT_OBJECT
+    | INPUT_FIELD_DEFINITION
+scalar FieldSet
+");
+    }
+
+
 }
