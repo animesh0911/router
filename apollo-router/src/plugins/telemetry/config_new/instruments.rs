@@ -2478,6 +2478,7 @@ mod tests {
     use crate::plugins::connectors::handle_responses::MappedResponse;
     use crate::plugins::connectors::make_requests::ResponseKey;
     use crate::plugins::connectors::mapping::Problem;
+    use crate::plugins::limits::OperationLimits;
     use crate::plugins::telemetry::APOLLO_PRIVATE_QUERY_ALIASES;
     use crate::plugins::telemetry::APOLLO_PRIVATE_QUERY_DEPTH;
     use crate::plugins::telemetry::APOLLO_PRIVATE_QUERY_HEIGHT;
@@ -2495,7 +2496,6 @@ mod tests {
     use crate::services::connector::request_service::TransportRequest;
     use crate::services::connector::request_service::TransportResponse;
     use crate::services::connector::request_service::transport;
-    use crate::spec::operation_limits::OperationLimits;
 
     type JsonMap = serde_json_bytes::Map<ByteString, Value>;
 
