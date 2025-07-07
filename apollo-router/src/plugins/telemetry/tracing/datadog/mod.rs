@@ -1,6 +1,7 @@
 //! Configuration for datadog tracing.
 
 mod agent_sampling;
+pub(crate) mod measuring_exporter;
 mod span_processor;
 
 use std::fmt::Debug;
@@ -46,6 +47,7 @@ use crate::plugins::telemetry::otel::named_runtime_channel::NamedTokioRuntime;
 use crate::plugins::telemetry::tracing::BatchProcessorConfig;
 use crate::plugins::telemetry::tracing::SpanProcessorExt;
 use crate::plugins::telemetry::tracing::TracingConfigurator;
+use crate::plugins::telemetry::tracing::datadog::measuring_exporter::MeasuringExporter;
 use crate::plugins::telemetry::tracing::datadog_exporter;
 use crate::plugins::telemetry::tracing::datadog_exporter::DatadogTraceState;
 
@@ -104,7 +106,7 @@ pub(crate) struct Config {
     span_metrics: HashMap<String, bool>,
 }
 
-fn default_span_metrics() -> HashMap<String, bool> {
+pub(crate) fn default_span_metrics() -> HashMap<String, bool> {
     let mut map = HashMap::with_capacity(BUILT_IN_SPAN_NAMES.len());
     for name in BUILT_IN_SPAN_NAMES {
         map.insert(name.to_string(), true);
@@ -222,7 +224,7 @@ impl TracingConfigurator for Config {
         span_metrics.extend(self.span_metrics.clone());
 
         let batch_processor = opentelemetry_sdk::trace::BatchSpanProcessor::builder(
-            ExporterWrapper {
+            MeasuringExporter {
                 delegate: exporter,
                 span_metrics,
             },
@@ -239,73 +241,5 @@ impl TracingConfigurator for Config {
                 builder.with_span_processor(batch_processor)
             },
         )
-    }
-}
-
-struct ExporterWrapper {
-    delegate: datadog_exporter::DatadogExporter,
-    span_metrics: HashMap<String, bool>,
-}
-
-impl Debug for ExporterWrapper {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.delegate.fmt(f)
-    }
-}
-
-impl SpanExporter for ExporterWrapper {
-    fn export(&mut self, mut batch: Vec<SpanData>) -> BoxFuture<'static, ExportResult> {
-        // Here we do some special processing of the spans before passing them to the delegate
-        // In particular we default the span.kind to the span kind, and also override the trace measure status if we need to.
-        for span in &mut batch {
-            // If the span metrics are enabled for this span, set the trace state to measuring.
-            // We do all this dancing to avoid allocating.
-            let original_span_name = span
-                .attributes
-                .iter()
-                .find(|kv| kv.key.as_str() == OTEL_ORIGINAL_NAME)
-                .map(|kv| kv.value.as_str());
-            let final_span_name = if let Some(span_name) = &original_span_name {
-                span_name.as_ref()
-            } else {
-                span.name.as_ref()
-            };
-
-            // Unfortunately trace state is immutable, so we have to create a new one
-            if let Some(setting) = self.span_metrics.get(final_span_name) {
-                if *setting != span.span_context.trace_state().measuring_enabled() {
-                    let new_trace_state = span.span_context.trace_state().with_measuring(*setting);
-                    span.span_context = SpanContext::new(
-                        span.span_context.trace_id(),
-                        span.span_context.span_id(),
-                        span.span_context.trace_flags(),
-                        span.span_context.is_remote(),
-                        new_trace_state,
-                    )
-                }
-            }
-
-            // Set the span kind https://github.com/DataDog/dd-trace-go/blob/main/ddtrace/ext/span_kind.go
-            let span_kind = match &span.span_kind {
-                SpanKind::Client => "client",
-                SpanKind::Server => "server",
-                SpanKind::Producer => "producer",
-                SpanKind::Consumer => "consumer",
-                SpanKind::Internal => "internal",
-            };
-            span.attributes.push(KeyValue::new("span.kind", span_kind));
-
-            // Note we do NOT set span.type as it isn't a good fit for otel.
-        }
-        self.delegate.export(batch)
-    }
-    fn shutdown(&mut self) {
-        self.delegate.shutdown()
-    }
-    fn force_flush(&mut self) -> BoxFuture<'static, ExportResult> {
-        self.delegate.force_flush()
-    }
-    fn set_resource(&mut self, resource: &Resource) {
-        self.delegate.set_resource(resource);
     }
 }

@@ -386,6 +386,7 @@ async fn test_untraced_request_sample_datadog_agent() -> Result<(), BoxError> {
         .services(["router", "subgraph"].into())
         .priority_sampled("1")
         .subgraph_sampled(true)
+        .measured_spans(["router", "supergraph"].into())
         .build()
         .validate_otlp_trace(
             &mut router,
@@ -792,19 +793,24 @@ impl Verifier for OtlpTraceSpec<'_> {
     }
 
     fn measured_span(&self, trace: &Value, name: &str) -> Result<bool, BoxError> {
+        // TODO This is somehow not working.
+        println!("measured_span: {:?}", name);
+        println!("trace: {}", serde_yaml::to_string(trace).unwrap());
         let binding1 = trace.select_path(&format!(
-            "$..[?(@.meta.['otel.original_name'] == '{}')].metrics.['_dd.measured']",
+            "$..[?(@.attributes[?(@.key == 'otel.original_name' && @.value.stringValue == '{}')] && @.attributes[?(@.key == '_dd.measured' && @.value.stringValue == '1')])].attributes[?(@.key == '_dd.measured')].value.stringValue",
             name
         ))?;
+        println!("binding1: {:?}", binding1);
         let binding2 = trace.select_path(&format!(
-            "$..[?(@.name == '{}')].metrics.['_dd.measured']",
+            "$..[?(@.name == '{}')].attributes[?(@.key == '_dd.measured')].value.stringValue",
             name
         ))?;
+        println!("binding2: {:?}", binding2);
         Ok(binding1
             .first()
             .or(binding2.first())
-            .and_then(|v| v.as_f64())
-            .map(|v| v == 1.0)
+            .and_then(|v| v.as_i64())
+            .map(|v| v == 1)
             .unwrap_or_default())
     }
 
