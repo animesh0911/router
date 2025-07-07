@@ -37,9 +37,12 @@ impl<T: SpanExporter> SpanExporter for MeasuringExporter<T> {
             };
 
             // If enabled via config
-            let metrics_configured = self.span_metrics.get(final_span_name).map(|v| *v);
+            let metrics_configured = self.span_metrics.get(final_span_name).copied().unwrap_or_default();
 
-            if metrics_configured.unwrap_or_default() {
+            if metrics_configured {
+                // `.with_measuring(true)` eventually causes `_dd.measured` to be set deep inside the
+                // datadog exporter. But we also support OTLP export to the datadog agent, and in that
+                // case we have to set the attribute manually.
                 let new_trace_state = span.span_context.trace_state().with_measuring(true);
                 span.span_context = SpanContext::new(
                     span.span_context.trace_id(),
@@ -48,6 +51,7 @@ impl<T: SpanExporter> SpanExporter for MeasuringExporter<T> {
                     span.span_context.is_remote(),
                     new_trace_state,
                 );
+                // Not necessary for datadog exporter, but doesn't hurt.
                 span.attributes.push(KeyValue::new("_dd.measured", "1"));
             }
 
