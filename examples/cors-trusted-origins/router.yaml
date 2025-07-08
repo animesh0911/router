@@ -1,6 +1,4 @@
 # Example router configuration with trusted origins CORS
-schema:
-  file: ./schema.graphql
 
 cors:
   # List of trusted origins that can send credentials
