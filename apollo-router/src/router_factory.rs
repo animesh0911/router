@@ -749,7 +749,7 @@ pub(crate) async fn create_plugins(
     }
     add_mandatory_apollo_plugin!("license_enforcement");
     add_mandatory_apollo_plugin!("health_check");
-    // TODO: Introduce a CORS plugin here
+    add_mandatory_apollo_plugin!("cors");
     add_mandatory_apollo_plugin!("traffic_shaping");
     add_mandatory_apollo_plugin!("limits");
     add_mandatory_apollo_plugin!("csrf");

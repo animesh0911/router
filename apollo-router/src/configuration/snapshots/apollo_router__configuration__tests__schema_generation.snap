@@ -2400,6 +2400,15 @@ expression: "&schema"
             "type": "string"
           },
           "type": "array"
+        },
+        "trusted_origins": {
+          "default": null,
+          "description": "List of trusted origins that are allowed to send credentials. When specified, CORS will be enabled for all origins, but only these trusted origins will receive `Access-Control-Allow-Credentials: true`. All other origins will receive `Access-Control-Allow-Origin: *` without credentials. Defaults to an empty list.",
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
         }
       },
       "type": "object"

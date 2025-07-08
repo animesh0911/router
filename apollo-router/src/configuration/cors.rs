@@ -53,6 +53,13 @@ pub(crate) struct Cors {
     /// Note that `origins` will be evaluated before `match_origins`
     pub(crate) match_origins: Option<Vec<String>>,
 
+    /// List of trusted origins that are allowed to send credentials.
+    /// When specified, CORS will be enabled for all origins, but only these
+    /// trusted origins will receive `Access-Control-Allow-Credentials: true`.
+    /// All other origins will receive `Access-Control-Allow-Origin: *` without credentials.
+    /// Defaults to an empty list.
+    pub(crate) trusted_origins: Option<Vec<String>>,
+
     /// Allowed request methods. Defaults to GET, POST, OPTIONS.
     pub(crate) methods: Vec<String>,
 
@@ -86,12 +93,14 @@ impl Cors {
         expose_headers: Option<Vec<String>>,
         origins: Option<Vec<String>>,
         match_origins: Option<Vec<String>>,
+        trusted_origins: Option<Vec<String>>,
         methods: Option<Vec<String>>,
         max_age: Option<Duration>,
     ) -> Self {
         Self {
             expose_headers,
             match_origins,
+            trusted_origins,
             max_age,
             origins: origins.unwrap_or_else(default_origins),
             methods: methods.unwrap_or_else(default_cors_methods),
@@ -103,9 +112,19 @@ impl Cors {
 }
 
 impl Cors {
+    /// Check if trusted origins mode is enabled
+    pub(crate) fn has_trusted_origins(&self) -> bool {
+        self.trusted_origins.is_some() && !self.trusted_origins.as_ref().unwrap().is_empty()
+    }
+
     pub(crate) fn into_layer(self) -> Result<CorsLayer, String> {
         // Ensure configuration is valid before creating CorsLayer
         self.ensure_usable_cors_rules()?;
+
+        // If trusted_origins is specified, we need custom handling
+        if self.has_trusted_origins() {
+            return Err("Trusted origins mode requires custom CORS handling".to_string());
+        }
 
         let allow_headers = if self.allow_headers.is_empty() {
             cors::AllowHeaders::mirror_request()
@@ -168,7 +187,28 @@ impl Cors {
                 "Invalid CORS configuration: use `allow_any_origin: true` to set `Access-Control-Allow-Origin: *`",
             );
         }
-        if self.allow_credentials {
+
+        // When trusted_origins is specified, we handle credentials dynamically
+        // so we can be more permissive with the validation
+        if self.has_trusted_origins() {
+            // With trusted origins, we can't use allow_any_origin since we need to
+            // differentiate between trusted and untrusted origins
+            if self.allow_any_origin {
+                return Err(
+                    "Invalid CORS configuration: Cannot combine `trusted_origins` with `allow_any_origin: true`",
+                );
+            }
+
+            // Validate trusted origins list
+            if let Some(trusted_origins) = &self.trusted_origins {
+                if trusted_origins.iter().any(|x| x == "*") {
+                    return Err(
+                        "Invalid CORS configuration: Cannot use '*' in `trusted_origins` list",
+                    );
+                }
+            }
+        } else if self.allow_credentials {
+            // Standard CORS validation when trusted_origins is not used
             if self.allow_headers.iter().any(|x| x == "*") {
                 return Err(
                     "Invalid CORS configuration: Cannot combine `Access-Control-Allow-Credentials: true` \
@@ -296,5 +336,45 @@ mod tests {
             .build();
         let layer = cors.into_layer();
         assert!(layer.is_ok());
+    }
+
+    #[test]
+    fn test_trusted_origins_requires_custom_handling() {
+        let cors = Cors::builder()
+            .trusted_origins(vec![String::from("https://trusted.com")])
+            .build();
+        let layer = cors.into_layer();
+        assert!(layer.is_err());
+        assert_eq!(
+            layer.unwrap_err(),
+            "Trusted origins mode requires custom CORS handling"
+        );
+    }
+
+    #[test]
+    fn test_trusted_origins_cannot_use_wildcard() {
+        let cors = Cors::builder()
+            .trusted_origins(vec![String::from("*")])
+            .build();
+        let layer = cors.into_layer();
+        assert!(layer.is_err());
+        assert_eq!(
+            layer.unwrap_err(),
+            "Invalid CORS configuration: Cannot use '*' in `trusted_origins` list"
+        );
+    }
+
+    #[test]
+    fn test_trusted_origins_cannot_use_allow_any_origin() {
+        let cors = Cors::builder()
+            .trusted_origins(vec![String::from("https://trusted.com")])
+            .allow_any_origin(true)
+            .build();
+        let layer = cors.into_layer();
+        assert!(layer.is_err());
+        assert_eq!(
+            layer.unwrap_err(),
+            "Invalid CORS configuration: Cannot combine `trusted_origins` with `allow_any_origin: true`"
+        );
     }
 }

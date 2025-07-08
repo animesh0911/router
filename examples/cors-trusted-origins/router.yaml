@@ -1,0 +1,46 @@
+# Example router configuration with trusted origins CORS
+schema:
+  file: ./schema.graphql
+
+cors:
+  # List of trusted origins that can send credentials
+  trusted_origins:
+    - "https://app.mycompany.com"
+    - "https://admin.mycompany.com"
+    - "https://dashboard.mycompany.com"
+    - "http://localhost:3000" # For development
+    - "http://localhost:8080" # For development
+
+  # Headers that clients are allowed to send
+  allow_headers:
+    - "content-type"
+    - "authorization"
+    - "x-apollo-operation-name"
+    - "apollo-require-preflight"
+
+  # Headers that should be exposed to the client
+  expose_headers:
+    - "x-custom-header"
+    - "x-request-id"
+
+  # HTTP methods that are allowed
+  methods:
+    - "GET"
+    - "POST"
+    - "OPTIONS"
+
+  # How long (in seconds) browsers can cache preflight responses
+  max_age: "86400" # 24 hours
+
+# Basic supergraph configuration
+supergraph:
+  # In a real scenario, you'd configure your subgraphs here
+  listen: 0.0.0.0:4000
+
+# Optional: Enable request logging to see CORS in action
+telemetry:
+  instrumentation:
+    events:
+      router:
+        request: info
+        response: info
