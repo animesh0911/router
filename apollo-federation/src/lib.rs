@@ -29,6 +29,7 @@ mod api_schema;
 mod compat;
 mod display_helpers;
 pub mod error;
+pub mod error_reporting;
 pub mod link;
 pub mod merge;
 pub(crate) mod operation;
