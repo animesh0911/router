@@ -16,6 +16,7 @@ members = [
     "examples/forbid-anonymous-operations/rhai",
     "examples/forbid-anonymous-operations/rust",
     "examples/hello-world/rust",
+    "examples/auth/rust",
     "examples/jwt-claims/rhai",
     "examples/logging/rhai",
     "examples/op-name-to-header/rhai",

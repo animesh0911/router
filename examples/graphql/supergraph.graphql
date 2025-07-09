@@ -5,6 +5,11 @@ schema
   mutation: Mutation
 }
 
+scalar federation__Scope
+directive @requiresScopes(
+  scopes: [[federation__Scope!]!]!
+) on OBJECT | FIELD_DEFINITION | INTERFACE | SCALAR | ENUM
+
 directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
 
 directive @join__field(
@@ -113,7 +118,7 @@ type User
   @join__type(graph: ACCOUNTS, key: "id")
   @join__type(graph: REVIEWS, key: "id") {
   id: ID!
-  name: String @join__field(graph: ACCOUNTS)
+  name: String @requiresScopes(scopes: [["email"]]) @join__field(graph: ACCOUNTS)
   username: String
     @join__field(graph: ACCOUNTS)
     @join__field(graph: REVIEWS, external: true)

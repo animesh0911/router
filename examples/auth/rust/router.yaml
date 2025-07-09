@@ -1,0 +1,3 @@
+plugins:
+  example.auth_requires_scopes:
+    a: "b"
