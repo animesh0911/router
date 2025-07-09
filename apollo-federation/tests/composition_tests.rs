@@ -198,3 +198,44 @@ fn compose_removes_federation_directives() {
             .schema()
     ));
 }
+
+#[test]
+fn test_field_merge_context_integration() {
+    // Test that FieldMergeContext works in the context of actual composition
+    let s1 = Subgraph::parse_and_expand(
+        "Subgraph1",
+        "https://subgraph1",
+        r#"
+            type Query {
+              product: Product
+            }
+
+            type Product @key(fields: "id") {
+              id: ID!
+              name: String
+            }
+        "#,
+    )
+    .unwrap();
+
+    let s2 = Subgraph::parse_and_expand(
+        "Subgraph2", 
+        "https://subgraph2",
+        r#"
+            type Product @key(fields: "id") {
+              id: ID!
+              price: Float
+            }
+        "#,
+    )
+    .unwrap();
+
+    let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
+    let schema_sdl = print_sdl(supergraph.schema.schema());
+    
+    // Verify that join__field directives are present (current behavior)
+    assert!(schema_sdl.contains("@join__field"));
+    
+    // This test ensures our changes don't break existing composition
+    insta::assert_snapshot!(schema_sdl);
+}
